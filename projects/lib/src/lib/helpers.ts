@@ -1,80 +1,107 @@
-import { Directive, Input, Output, EventEmitter, HostListener, ElementRef } from '@angular/core';
+import { Directive, Input, Output, EventEmitter, ElementRef } from '@angular/core';
 
-export type ColorMode = 'color' | 'c' | '1' |
-  'grayscale' | 'g' | '2' | 'presets' | 'p' | '3';
+@Directive({
+    selector: '[text]',
+    host: {
+        '(input)': 'changeInput($event.target.value)'
+    }
+})
+export class TextDirective {
+    @Output('newValue') newValue = new EventEmitter<any>();
+    @Input('text') text: any;
+    @Input('rg') rg: number;
 
-export type AlphaChannel = 'enabled' | 'disabled' | 'always' | 'forced';
-
-export type BoundingRectangle = {
-  top: number;
-  bottom: number;
-  left: number;
-  right: number;
-  height: number;
-  width: number;
-};
-
-export type OutputFormat = 'auto' | 'hex' | 'rgba' | 'hsla';
-
-export function calculateAutoPositioning(elBounds: BoundingRectangle, triggerElBounds: BoundingRectangle): string {
-  // Defaults
-  let usePositionX = 'right';
-  let usePositionY = 'bottom';
-  // Calculate collisions
-  const { height, width } = elBounds;
-  const { top, left } = triggerElBounds;
-  const bottom = top + triggerElBounds.height;
-  const right = left + triggerElBounds.width;
-
-  const collisionTop = top - height < 0;
-  const collisionBottom = bottom + height > (window.innerHeight || document.documentElement.clientHeight);
-  const collisionLeft = left - width < 0;
-  const collisionRight = right + width > (window.innerWidth || document.documentElement.clientWidth);
-  const collisionAll = collisionTop && collisionBottom && collisionLeft && collisionRight;
-
-  // Generate X & Y position values
-  if (collisionBottom) {
-    usePositionY = 'top';
-  }
-
-  if (collisionTop) {
-    usePositionY = 'bottom';
-  }
-
-  if (collisionLeft) {
-    usePositionX = 'right';
-  }
-
-  if (collisionRight) {
-    usePositionX = 'left';
-  }
-
-
-  // Choose the largest gap available
-  if (collisionAll) {
-    const postions = ['left', 'right', 'top', 'bottom'];
-    return postions.reduce((prev, next) => elBounds[prev] > elBounds[next] ? prev : next);
-  }
-
-  if ((collisionLeft && collisionRight)) {
-    if (collisionTop) { return 'bottom'; }
-    if (collisionBottom) { return 'top'; }
-    return top > bottom ? 'top' : 'bottom';
-  }
-
-  if ((collisionTop && collisionBottom)) {
-    if (collisionLeft) { return 'right'; }
-    if (collisionRight) { return 'left'; }
-    return left > right ? 'left' : 'right';
-  }
-
-  return `${usePositionY}-${usePositionX}`;
+    changeInput(value: string) {
+        if (this.rg === undefined) {
+            this.newValue.emit(value);
+        } else {
+            let numeric = parseFloat(value)
+            if (!isNaN(numeric) && numeric >= 0 && numeric <= this.rg) {
+                this.newValue.emit({ v: numeric, rg: this.rg });
+            }
+        }
+    }
 }
 
-export function detectIE(): boolean | number {
+@Directive({
+    selector: '[slider]',
+    host: {
+        '(mousedown)': 'start($event)',
+        '(touchstart)': 'start($event)'
+    }
+})
+export class SliderDirective {
+    @Output('newValue') newValue = new EventEmitter<any>();
+    @Output('dragStart') dragStart = new EventEmitter();
+    @Output('dragEnd') dragEnd = new EventEmitter();
+    @Input('slider') slider: string;
+    @Input('rgX') rgX: number;
+    @Input('rgY') rgY: number;
+    private listenerMove: any;
+    private listenerStop: any;
+
+    constructor(private el: ElementRef) {
+        this.listenerMove = (event: any) => { this.move(event) };
+        this.listenerStop = () => { this.stop() };
+    }
+
+    setCursor(event: any) {
+        let height = this.el.nativeElement.offsetHeight;
+        let width = this.el.nativeElement.offsetWidth;
+        let x = Math.max(0, Math.min(this.getX(event), width));
+        let y = Math.max(0, Math.min(this.getY(event), height));
+
+        if (this.rgX !== undefined && this.rgY !== undefined) {
+            this.newValue.emit({ s: x / width, v: (1 - y / height), rgX: this.rgX, rgY: this.rgY });
+        } else if (this.rgX === undefined && this.rgY !== undefined) {//ready to use vertical sliders
+            this.newValue.emit({ v: y / height, rg: this.rgY });
+        } else {
+            this.newValue.emit({ v: x / width, rg: this.rgX });
+        }
+    }
+
+    move(event: any) {
+        event.preventDefault();
+        this.setCursor(event);
+    }
+
+    start(event: any) {
+        this.setCursor(event);
+        document.addEventListener('mousemove', this.listenerMove);
+        document.addEventListener('touchmove', this.listenerMove);
+        document.addEventListener('mouseup', this.listenerStop);
+        document.addEventListener('touchend', this.listenerStop);
+        this.dragStart.emit();
+    }
+
+    stop() {
+        document.removeEventListener('mousemove', this.listenerMove);
+        document.removeEventListener('touchmove', this.listenerMove);
+        document.removeEventListener('mouseup', this.listenerStop);
+        document.removeEventListener('touchend', this.listenerStop);
+        this.dragEnd.emit();
+    }
+
+    getX(event: any): number {
+        return (event.pageX !== undefined ? event.pageX : event.touches[0].pageX) - this.el.nativeElement.getBoundingClientRect().left - window.pageXOffset;
+    }
+    getY(event: any): number {
+        return (event.pageY !== undefined ? event.pageY : event.touches[0].pageY) - this.el.nativeElement.getBoundingClientRect().top - window.pageYOffset;
+    }
+}
+
+export class SliderPosition {
+  constructor(public h: number, public s: number, public v: number, public a: number) { }
+}
+
+export class SliderDimension {
+  constructor(public h: number, public s: number, public v: number, public a: number) { }
+}
+
+export function detectIE() {
   let ua = '';
 
-  if (typeof navigator !== 'undefined') {
+  if (typeof navigator !== "undefined") {
     ua = navigator.userAgent.toLowerCase();
   }
 
@@ -85,128 +112,6 @@ export function detectIE(): boolean | number {
     return parseInt(ua.substring(msie + 5, ua.indexOf('.', msie)), 10);
   }
 
-  // Other browser
+  // other browser
   return false;
-}
-
-@Directive({
-  selector: '[text]'
-})
-export class TextDirective {
-  @Input() rg: number;
-  @Input() text: any;
-
-  @Output() newValue = new EventEmitter<any>();
-
-  @HostListener('input', ['$event']) inputChange(event: any): void {
-    const value = event.target.value;
-
-    if (this.rg === undefined) {
-      this.newValue.emit(value);
-    } else {
-      const numeric = parseFloat(value);
-
-      this.newValue.emit({ v: numeric, rg: this.rg });
-    }
-  }
-}
-
-@Directive({
-  selector: '[slider]'
-})
-export class SliderDirective {
-  private listenerMove: any;
-  private listenerStop: any;
-
-  @Input() rgX: number;
-  @Input() rgY: number;
-
-  @Input() slider: string;
-
-  @Output() dragEnd = new EventEmitter();
-  @Output() dragStart = new EventEmitter();
-
-  @Output() newValue = new EventEmitter<any>();
-
-  @HostListener('mousedown', ['$event']) mouseDown(event: any): void {
-    this.start(event);
-  }
-
-  @HostListener('touchstart', ['$event']) touchStart(event: any): void {
-    this.start(event);
-  }
-
-  constructor(private elRef: ElementRef) {
-    this.listenerMove = (event: any) => this.move(event);
-
-    this.listenerStop = () => this.stop();
-  }
-
-  private move(event: any): void {
-    event.preventDefault();
-
-    this.setCursor(event);
-  }
-
-  private start(event: any): void {
-    this.setCursor(event);
-
-    event.stopPropagation();
-
-    document.addEventListener('mouseup', this.listenerStop);
-    document.addEventListener('touchend', this.listenerStop);
-    document.addEventListener('mousemove', this.listenerMove);
-    document.addEventListener('touchmove', this.listenerMove);
-
-    this.dragStart.emit();
-  }
-
-  private stop(): void {
-    document.removeEventListener('mouseup', this.listenerStop);
-    document.removeEventListener('touchend', this.listenerStop);
-    document.removeEventListener('mousemove', this.listenerMove);
-    document.removeEventListener('touchmove', this.listenerMove);
-
-    this.dragEnd.emit();
-  }
-
-  private getX(event: any): number {
-    const position = this.elRef.nativeElement.getBoundingClientRect();
-
-    const pageX = (event.pageX !== undefined) ? event.pageX : event.touches[0].pageX;
-
-    return pageX - position.left - window.pageXOffset;
-  }
-
-  private getY(event: any): number {
-    const position = this.elRef.nativeElement.getBoundingClientRect();
-
-    const pageY = (event.pageY !== undefined) ? event.pageY : event.touches[0].pageY;
-
-    return pageY - position.top - window.pageYOffset;
-  }
-
-  private setCursor(event: any): void {
-    const width = this.elRef.nativeElement.offsetWidth;
-    const height = this.elRef.nativeElement.offsetHeight;
-
-    const x = Math.max(0, Math.min(this.getX(event), width));
-    const y = Math.max(0, Math.min(this.getY(event), height));
-
-    if (this.rgX !== undefined && this.rgY !== undefined) {
-      this.newValue.emit({ s: x / width, v: (1 - y / height), rgX: this.rgX, rgY: this.rgY });
-    } else if (this.rgX === undefined && this.rgY !== undefined) {
-      this.newValue.emit({ v: y / height, rgY: this.rgY });
-    } else if (this.rgX !== undefined && this.rgY === undefined) {
-      this.newValue.emit({ v: x / width, rgX: this.rgX });
-    }
-  }
-}
-
-export class SliderPosition {
-  constructor(public h: number, public s: number, public v: number, public a: number) {}
-}
-
-export class SliderDimension {
-  constructor(public h: number, public s: number, public v: number, public a: number) {}
 }
